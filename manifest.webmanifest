@@ -1,0 +1,29 @@
+{
+ "name": "Сроки по фирмам — is_karisha",
+ "short_name": "Сроки",
+ "description": "Налоговые сроки по каждой фирме с датой «сдать до» за 3 дня",
+ "lang": "ru",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#FDEDEE",
+ "theme_color": "#FDEDEE",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
