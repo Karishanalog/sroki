@@ -250,6 +250,12 @@ const TODAY_S = iso(TODAY);
 const daysTo = s => Math.round((parse(s) - TODAY) / 86400000);
 
 // ---------- кому что положено (те же правила, что в Excel) ----------
+// директор без зарплаты: с 2026 взносы с МРОТ каждый месяц (кроме АУСН)
+const dirOnly = f => !!f.dir && !f.emp && f.form === 'ООО' && f.regime !== 'АУСН';
+const DIR_TASKS = new Set(['Уведомление по страховым взносам', 'Уведомление по страховым взносам (+ травматизм)', 'Страховые взносы за сотрудников (единый тариф)', 'Расчёт по страховым взносам (РСВ)', 'Персонифицированные сведения о физлицах']);
+const DIR_NOTE = 'Директор без зарплаты: с 2026 года взносы платятся каждый месяц с МРОТ, даже если выплат нет. На АУСН не нужно.';
+const forDir = (t, f) => !dirOnly(f) ? t : t.n === 'Страховые взносы за сотрудников (единый тариф)'
+  ? { ...t, n: 'Страховые взносы за директора (с МРОТ)', no: DIR_NOTE } : { ...t, n: t.n.replace(' (+ травматизм)', ''), no: [t.no, DIR_NOTE].filter(Boolean).join(' ') };
 function applies(t, f) {
   const R = f.regime || '';
   const reg = { O: R === 'ОСНО', U: R.startsWith('УСН') || R === 'ПСН + УСН', A: R === 'АУСН', P: R.startsWith('ПСН') };
@@ -266,7 +272,7 @@ function applies(t, f) {
   } else {
     const regs = 'OUAP'.split('').filter(c => tags.includes(c));
     ok = regs.length ? regs.some(c => reg[c]) : true;
-    if (tags.includes('E')) ok = ok && !!f.emp && R !== 'АУСН';
+    if (tags.includes('E')) ok = ok && (!!f.emp || dirOnly(f) && DIR_TASKS.has(n)) && R !== 'АУСН';
     if (tags.includes('V') && tags.length <= 2) ok = ok && !!f.eaeu;
     if (tags.includes('I')) ok = ok && !!f.prop;
     if (tags.includes('N') && !regs.length) ok = ok && NDS;
@@ -321,7 +327,7 @@ function ausnTasks(f, y, m) {
 }
 function tasksFor(f, y, m) {
   const pre = `${y}-${String(m).padStart(2,'0')}`;
-  return TASKS.filter(t => t.d.startsWith(pre) && applies(t, f)).concat(salaryTasks(f, y, m), patentTasks(f, y, m), ausnTasks(f, y, m))
+  return TASKS.filter(t => t.d.startsWith(pre) && applies(t, f)).map(t => forDir(t, f)).concat(salaryTasks(f, y, m), patentTasks(f, y, m), ausnTasks(f, y, m))
     .sort((a, b) => a.s.localeCompare(b.s) || a.d.localeCompare(b.d) || a.n.localeCompare(b.n));
 }
 
@@ -403,7 +409,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&l
 const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 function dueClass(t, done) { if (done) return 'ok'; const n = daysTo(t.s); return n < 0 ? 'bad' : n <= 3 ? 'warn' : ''; }
 const fmtRub = v => (v === '' || v == null || isNaN(v)) ? '' : Number(v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const firmMeta = f => [f.form, f.regime, f.nds && f.regime !== 'ОСНО' ? 'с НДС' : '', f.emp ? 'сотрудники' : '', f.eaeu ? 'ЕАЭС' : '', (f.regime || '').startsWith('ПСН') && f.form === 'ИП' && (f.patents || []).length ? `патентов: ${f.patents.length}` : ''].filter(Boolean).join(' · ');
+const firmMeta = f => [f.form, f.regime, f.nds && f.regime !== 'ОСНО' ? 'с НДС' : '', f.emp ? 'сотрудники' : '', dirOnly(f) ? 'директор без з/п' : '', f.eaeu ? 'ЕАЭС' : '', (f.regime || '').startsWith('ПСН') && f.form === 'ИП' && (f.patents || []).length ? `патентов: ${f.patents.length}` : ''].filter(Boolean).join(' · ');
 const sortedFirms = () => state.firms.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
 
 function renderMonths() {
@@ -524,10 +530,11 @@ function renderDates() {
     }).join('');
 }
 
-const BLANK = { name: '', form: 'ООО', regime: 'УСН Доходы 6%', nds: false, emp: false, eaeu: false, prop: false, advDay: '', payDay: '', profit: 'квартальные', agent: false, abroad: false, broker: false, comment: '', patents: [] };
+const BLANK = { name: '', form: 'ООО', regime: 'УСН Доходы 6%', nds: false, emp: false, eaeu: false, prop: false, dir: false, advDay: '', payDay: '', profit: 'квартальные', agent: false, abroad: false, broker: false, comment: '', patents: [] };
 const TOGGLES = [
   ['nds', 'Плательщик НДС', 'Для УСН — если доход больше 20 млн. На ОСНО НДС учитывается всегда'],
   ['emp', 'Есть сотрудники', 'НДФЛ, взносы, РСВ, ПСВ, 6-НДФЛ, ЕФС-1, аванс и зарплата'],
+  ['dir', 'Директор без зарплаты', 'Для ООО без сотрудников: взносы с МРОТ каждый месяц, уведомления, РСВ, ПСВ'],
   ['eaeu', 'Торговля с ЕАЭС', 'Ввоз или вывоз: статформа, декларация по косвенным налогам'],
   ['prop', 'Имущество', 'Транспорт, земля, недвижимость (для ООО)'],
   ['agent', 'Платит иностранцам', 'Налоговый агент: НДС за услуги иностранцев, расчёт о доходах'],
